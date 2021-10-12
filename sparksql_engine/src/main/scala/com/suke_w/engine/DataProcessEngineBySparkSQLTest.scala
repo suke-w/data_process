@@ -3,9 +3,12 @@ package com.suke_w.engine
 import com.alibaba.fastjson.JSON
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, KafkaUtils, LocationStrategies}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * 基于sparkSQL和SparkStreaming的通用实时计算引擎
@@ -13,12 +16,12 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
  */
 object DataProcessEngineBySparkSQLTest {
   def main(args: Array[String]): Unit = {
-    val masterUrl = "local[2]"  //sparkStreaming中需要指定excutor数量
-    val appSecond = 5  //saprkStreaming程序的间隔时间
-    val appName  = "DataProcessEngineBySparkSQLTest"
+    val masterUrl = "local[2]" //sparkStreaming中需要指定excutor数量
+    val appSecond = 5 //saprkStreaming程序的间隔时间
+    val appName = "DataProcessEngineBySparkSQLTest"
     val inKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输入kafka地址，kafka集群
     val outKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输出kafka地址
-    val inTopic = "stu"  //输入kafka中的topic名称
+    val inTopic = "stu" //输入kafka中的topic名称
     val outTopic = "stu_clean" //输出kafka中的topic名称
     val groupId = "g1" //kafka消费者的groupId
     val inSchemaInfo = "{\"name\":\"string\",\"age\":\"int\"}" //输入数据Schema信息
@@ -61,15 +64,45 @@ object DataProcessEngineBySparkSQLTest {
         //此方法内，每隔五秒钟可以获取一批RDD数据，接下来将这一批RDD数据注册成DataFrame，然后就可以使用sql做一些查询操作
         rdd => {
           //1.获取输入数据的schema信息，组装structType
-          val inSchemaInfo = JSON.parseObject(inSchemaInfo)
-          val it = inSchemaInfo.entrySet().iterator()
-
-
+          val inSchemaInfoJson = JSON.parseObject(inSchemaInfo)
+          val it = inSchemaInfoJson.entrySet().iterator()
+          val sfBuffer = new ArrayBuffer[StructField]()
+          while (it.hasNext) {
+            val entry = it.next()
+            val fieldName = entry.getKey
+            val fieldType = entry.getValue
+            if (fieldType == "string") {
+              sfBuffer.append(StructField(fieldName, StringType, nullable = false))
+            } else if (fieldType == "int") {
+              sfBuffer.append(StructField(fieldName, IntegerType, nullable = false))
+            }
+          }
+          val structType = StructType(sfBuffer.toArray)
           //2.解析输入的数据组装Row，kafka中的数据是json格式的
+          val rowRDD = rdd.map(line => {
+            val lineJson = JSON.parseObject(line)
+            //根据输入数据schema信息获取字段，根据字段获取值，进行拼接
+            val inSchemaInfoJson = JSON.parseObject(inSchemaInfo)
+            val it2 = inSchemaInfoJson.entrySet().iterator()
+            val buffer2 = new ArrayBuffer[Any]()
+            while (it2.hasNext) {
+              val entry = it2.next()
+              val fieldName = entry.getKey
+              val fieldType = entry.getValue
+              if (fieldType == "string") {
+                val value = lineJson.getString(fieldName)
+                buffer2.append(value)
+              } else if (fieldType == "int") {
+                val value = lineJson.getIntValue(fieldName)
+                buffer2.append(value)
+              }
+            }
 
+            Row.fromSeq(buffer2)
+          })
           //3.建表
 
-          //4.注册自定义函数（在用到的情况下）
+          //4.注册自定义函数（此步可选，在用到的情况下需要注册）
 
           //5.接收用户传过来的sql，执行查询操作
 
