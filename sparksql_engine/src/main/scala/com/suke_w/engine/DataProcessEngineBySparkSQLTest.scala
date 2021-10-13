@@ -1,6 +1,7 @@
 package com.suke_w.engine
 
 import com.alibaba.fastjson.JSON
+import com.suke_w.udfs.MyUDFTest
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Row, SparkSession}
@@ -97,20 +98,34 @@ object DataProcessEngineBySparkSQLTest {
                 buffer2.append(value)
               }
             }
-
             Row.fromSeq(buffer2)
           })
-          //3.建表
-
+          //3.建表  即创建一个基于row的dataFrame
+          val rowDF = sparkSession.createDataFrame(rowRDD,structType)
+          //表名建议固定使用，这样无论数据源是哪个topic，都便于记忆
+          rowDF.createOrReplaceTempView("source")
           //4.注册自定义函数（此步可选，在用到的情况下需要注册）
-
+          //4.1 注册公共自定义函数，即所有任务都需要用到这个函数，在此处注册
+          sparkSession.udf.register("MyUDF",new MyUDFTest,StringType)
+          //4.2 个性化自定义函数，在配置任务时动态选择使用哪个自定义函数
+          //动态注册需要解析json参数
+          if(!"".equals(funcInfo.trim)) {
+            val funcInfoArray = JSON.parseArray(funcInfo)
+            for(i <- 0 until funcInfoArray.size()) {
+              val jsonObj = funcInfoArray.getJSONObject(i)
+              val name = jsonObj.getString("name")
+              val mainClass = jsonObj.getString("mainClass")
+              val returnType = jsonObj.getString("returnType")
+              val paramArray = jsonObj.getString("param").replace("(", "").replace(")", "")
+                .split(",")
+              paramArray.size match {
+                case 1 =>
+              }
+            }
+          }
           //5.接收用户传过来的sql，执行查询操作
-
           //6.解析sql的执行结果
-
         }
       ) //每隔appSecond配置的时间，处理一批数据，foreachRDD里就是对应的这一批数据
-
   }
-
 }
