@@ -1,9 +1,13 @@
 package com.suke_w.engine
 
-import com.alibaba.fastjson.JSON
+import java.util.Properties
+
+import com.alibaba.fastjson.{JSON, JSONObject}
 import com.suke_w.udfs.MyUDFTest
-import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.api.java.{UDF1, UDF2, UDF3}
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, KafkaUtils, LocationStrategies}
@@ -12,9 +16,9 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
 import scala.collection.mutable.ArrayBuffer
 
 /**
- * 基于sparkSQL和SparkStreaming的通用实时计算引擎
- * 目前输入数据及输出数据都是json格式
- */
+  * 基于sparkSQL和SparkStreaming的通用实时计算引擎
+  * 目前输入数据及输出数据都是json格式
+  */
 object DataProcessEngineBySparkSQLTest {
   def main(args: Array[String]): Unit = {
     val masterUrl = "local[2]" //sparkStreaming中需要指定excutor数量
@@ -71,7 +75,7 @@ object DataProcessEngineBySparkSQLTest {
           while (it.hasNext) {
             val entry = it.next()
             val fieldName = entry.getKey
-            val fieldType = entry.getValue
+            val fieldType = entry.getValue.toString
             if (fieldType == "string") {
               sfBuffer.append(StructField(fieldName, StringType, nullable = false))
             } else if (fieldType == "int") {
@@ -89,7 +93,7 @@ object DataProcessEngineBySparkSQLTest {
             while (it2.hasNext) {
               val entry = it2.next()
               val fieldName = entry.getKey
-              val fieldType = entry.getValue
+              val fieldType = entry.getValue.toString
               if (fieldType == "string") {
                 val value = lineJson.getString(fieldName)
                 buffer2.append(value)
@@ -101,31 +105,65 @@ object DataProcessEngineBySparkSQLTest {
             Row.fromSeq(buffer2)
           })
           //3.建表  即创建一个基于row的dataFrame
-          val rowDF = sparkSession.createDataFrame(rowRDD,structType)
+          val rowDF = sparkSession.createDataFrame(rowRDD, structType)
           //表名建议固定使用，这样无论数据源是哪个topic，都便于记忆
           rowDF.createOrReplaceTempView("source")
           //4.注册自定义函数（此步可选，在用到的情况下需要注册）
           //4.1 注册公共自定义函数，即所有任务都需要用到这个函数，在此处注册
-          sparkSession.udf.register("MyUDF",new MyUDFTest,StringType)
+          sparkSession.udf.register("MyUDF", new MyUDFTest, StringType)
           //4.2 个性化自定义函数，在配置任务时动态选择使用哪个自定义函数
           //动态注册需要解析json参数
-          if(!"".equals(funcInfo.trim)) {
+          if (!"".equals(funcInfo.trim)) {
             val funcInfoArray = JSON.parseArray(funcInfo)
-            for(i <- 0 until funcInfoArray.size()) {
+            for (i <- 0 until funcInfoArray.size()) {
               val jsonObj = funcInfoArray.getJSONObject(i)
               val name = jsonObj.getString("name")
               val mainClass = jsonObj.getString("mainClass")
               val returnType = jsonObj.getString("returnType")
               val paramArray = jsonObj.getString("param").replace("(", "").replace(")", "")
                 .split(",")
+              val rType = if (returnType == "String") {
+                StringType
+              } else {
+                StringType
+              }
               paramArray.size match {
-                case 1 =>
+                case 1 => sparkSession.udf.register(name, Class.forName(mainClass).newInstance().asInstanceOf[UDF1[String, String]], rType)
+                case 2 => sparkSession.udf.register(name, Class.forName(mainClass).newInstance().asInstanceOf[UDF2[String, String, String]], rType)
+                case 3 => sparkSession.udf.register(name, Class.forName(mainClass).newInstance().asInstanceOf[UDF3[String, String, String, String]], rType)
               }
             }
           }
+
           //5.接收用户传过来的sql，执行查询操作
+
+          val resDF = sparkSession.sql(sql)
           //6.解析sql的执行结果
-        }
-      ) //每隔appSecond配置的时间，处理一批数据，foreachRDD里就是对应的这一批数据
+          resDF.rdd.foreachPartition(pr => {
+            val prop = new Properties()
+            prop.put("bootstrap.servers", outKafkaServers)
+            prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
+            prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
+
+            pr.foreach(row => {
+              val resJSON = new JSONObject()
+              val outSchemaInfoJson = JSON.parseObject(outSchemaInfo)
+              val it3 = outSchemaInfoJson.entrySet().iterator()
+              while (it3.hasNext) {
+                val entry = it3.next()
+                val fieldName = entry.getKey
+                val valueType = entry.getValue.toString
+                if (valueType == "string") {
+                  //resJSON.put(fieldName,)
+                }
+
+              }
+
+            })
+          })
+        }) //每隔appSecond配置的时间，处理一批数据，foreachRDD里就是对应的这一批数据
+
+    ssc.start()
+    ssc.awaitTermination()
   }
 }
