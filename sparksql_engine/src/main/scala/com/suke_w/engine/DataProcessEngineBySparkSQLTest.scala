@@ -144,7 +144,7 @@ object DataProcessEngineBySparkSQLTest {
             prop.put("bootstrap.servers", outKafkaServers)
             prop.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
             prop.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
-
+            val kafkaProducer = new KafkaProducer[String, String](prop)
             pr.foreach(row => {
               val resJSON = new JSONObject()
               val outSchemaInfoJson = JSON.parseObject(outSchemaInfo)
@@ -154,12 +154,14 @@ object DataProcessEngineBySparkSQLTest {
                 val fieldName = entry.getKey
                 val valueType = entry.getValue.toString
                 if (valueType == "string") {
-                  //resJSON.put(fieldName,)
+                  resJSON.put(fieldName, row.getAs[String](fieldName))
+                } else if (fieldName == "int") {
+                  resJSON.put(fieldName, row.getAs[Int](fieldName))
                 }
-
               }
-
+              kafkaProducer.send(new ProducerRecord(outTopic, resJSON.toString))
             })
+            kafkaProducer.close()
           })
         }) //每隔appSecond配置的时间，处理一批数据，foreachRDD里就是对应的这一批数据
 
