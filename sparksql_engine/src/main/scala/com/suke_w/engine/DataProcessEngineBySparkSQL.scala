@@ -8,8 +8,8 @@ import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, Produce
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.api.java.{UDF1, UDF2, UDF3}
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
+import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, KafkaUtils, LocationStrategies}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 
@@ -18,23 +18,39 @@ import scala.collection.mutable.ArrayBuffer
 /**
   * 基于sparkSQL和SparkStreaming的通用实时计算引擎
   * 目前输入数据及输出数据都是json格式
+  * 1.抽取方法，优化代码，支持常见基本数据类型
   */
 object DataProcessEngineBySparkSQLTest {
   def main(args: Array[String]): Unit = {
-    val masterUrl = "local[2]" //sparkStreaming中需要指定excutor数量
-    val appSecond = 5 //saprkStreaming程序的间隔时间
-    val appName = "DataProcessEngineBySparkSQLTest"
-    val inKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输入kafka地址，kafka集群
-    val outKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输出kafka地址
-    val inTopic = "stu" //输入kafka中的topic名称
-    val outTopic = "stu_clean" //输出kafka中的topic名称
-    val groupId = "g1" //kafka消费者的groupId
-    val inSchemaInfo = "{\"name\":\"string\",\"age\":\"int\"}" //输入数据Schema信息
-    val outSchemaInfo = "{\"newname\":\"string\",\"age\":\"int\"}" //输出数据Schema信息
-    val funcInfo = "[{\"name\":\"m1\",\"mainClass\":\"com.suke_w.udfs.MyUDF1\",\"param\":\"(String)\",\"returnType\":\"string\"}]" //json数组,需要使用的udf
+    var masterUrl = "local[2]" //sparkStreaming中需要指定excutor数量
+    var appSecond = 5 //saprkStreaming程序的间隔时间
+    var appName = "DataProcessEngineBySparkSQLTest"
+    var inKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输入kafka地址，kafka集群
+    var outKafkaServers = "bigdata01:9092,bigdata02:9092,bigdata03:9092" //输出kafka地址
+    var inTopic = "stu" //输入kafka中的topic名称
+    var outTopic = "stu_clean" //输出kafka中的topic名称
+    var groupId = "g1" //kafka消费者的groupId
+    var inSchemaInfo = "{\"name\":\"string\",\"age\":\"int\"}" //输入数据Schema信息
+    var outSchemaInfo = "{\"newname\":\"string\",\"age\":\"int\"}" //输出数据Schema信息
+    var funcInfo = "[{\"name\":\"m1\",\"mainClass\":\"com.suke_w.udfs.MyUDF1\",\"param\":\"(String)\",\"returnType\":\"string\"}]" //json数组,需要使用的udf
     // 注意：针对sparksql 查询的字段顺序和目标表的字段顺序可以不一致
     // 建议输出schema信息的字段和sql中查询的字段完全一致。
-    val sql = "select m1(name) as newname,age from source" //用户输入的sql
+    var sql = "select m1(name) as newname,age from source" //用户输入的sql
+
+    if (args.length == 12) {
+      masterUrl = args(0)
+      appSecond = args(1).toInt
+      appName = args(2)
+      inKafkaServers = args(3)
+      outKafkaServers = args(4)
+      inTopic = args(5)
+      outTopic = args(6)
+      groupId = args(7)
+      inSchemaInfo = args(8)
+      outSchemaInfo = args(9)
+      funcInfo = args(10)
+      sql = args(11)
+    }
 
 
     //获取spark相关配置
@@ -136,7 +152,6 @@ object DataProcessEngineBySparkSQLTest {
           }
 
           //5.接收用户传过来的sql，执行查询操作
-
           val resDF = sparkSession.sql(sql)
           //6.解析sql的执行结果
           resDF.rdd.foreachPartition(pr => {
@@ -168,4 +183,16 @@ object DataProcessEngineBySparkSQLTest {
     ssc.start()
     ssc.awaitTermination()
   }
+
+  def getInkafkaServerConf(): Map{
+    Map[String, Object](
+    "bootstrap.servers" -> inKafkaServers,
+    "key.deserializer" -> classOf[StringDeserializer],
+    "value.deserializer" -> classOf[StringDeserializer],
+    "group.id" -> groupId,
+    "auto.offset.reset" -> "latest",
+    "enable.auto.commit" -> (true: java.lang.Boolean) //强制指定类型，避免出现问题
+    )
+  }
 }
+
