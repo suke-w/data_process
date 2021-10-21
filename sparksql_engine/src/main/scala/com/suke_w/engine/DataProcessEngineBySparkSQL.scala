@@ -60,14 +60,7 @@ object DataProcessEngineBySparkSQLTest {
     val sparkSession = SparkSession.builder().config(conf).getOrCreate()
 
     //kafka配置项
-    val inKafkaParams = Map[String, Object](
-      "bootstrap.servers" -> inKafkaServers,
-      "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
-      "group.id" -> groupId,
-      "auto.offset.reset" -> "latest",
-      "enable.auto.commit" -> (true: java.lang.Boolean) //强制指定类型，避免出现问题
-    )
+    val inKafkaParams = getInkafkaServerConfig(inKafkaServers,groupId)
 
     //指定输入topic名称
     val topics = Array(inTopic)
@@ -184,9 +177,9 @@ object DataProcessEngineBySparkSQLTest {
     ssc.awaitTermination()
   }
 
-  def getInkafkaServerConf(): Map{
+  def getInkafkaServerConfig(inKafkaServers: String,groupId: String): Map[String, Object] = {
     Map[String, Object](
-    "bootstrap.servers" -> inKafkaServers,
+     "bootstrap.servers" -> inKafkaServers,
     "key.deserializer" -> classOf[StringDeserializer],
     "value.deserializer" -> classOf[StringDeserializer],
     "group.id" -> groupId,
@@ -194,5 +187,7 @@ object DataProcessEngineBySparkSQLTest {
     "enable.auto.commit" -> (true: java.lang.Boolean) //强制指定类型，避免出现问题
     )
   }
+
+
 }
 
