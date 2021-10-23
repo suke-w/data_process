@@ -34,7 +34,7 @@ object DataProcessEngineBySparkSQLTest {
     val funcInfo = "[{\"name\":\"m1\",\"mainClass\":\"com.suke_w.udfs.MyUDF1\",\"param\":\"(String)\",\"returnType\":\"string\"}]" //json数组,需要使用的udf
     // 注意：针对sparksql 查询的字段顺序和目标表的字段顺序可以不一致
     // 建议输出schema信息的字段和sql中查询的字段完全一致。
-    val sql = "select m1(name) as newname,age from source" //用户输入的sql
+    val sql = "select m1(name) as newname, age from source" //用户输入的sql
 
 
     //获取spark相关配置
@@ -55,6 +55,7 @@ object DataProcessEngineBySparkSQLTest {
 
     //指定输入topic名称
     val topics = Array(inTopic)
+
 
     //获取输入kafka数据流
     val stream = KafkaUtils.createDirectStream[String, String](
@@ -137,6 +138,8 @@ object DataProcessEngineBySparkSQLTest {
 
           //5.接收用户传过来的sql，执行查询操作
 
+          print("-------------------------------------------------------")
+          sparkSession.sql(sql).show()
           val resDF = sparkSession.sql(sql)
           //6.解析sql的执行结果
           resDF.rdd.foreachPartition(pr => {
@@ -155,7 +158,7 @@ object DataProcessEngineBySparkSQLTest {
                 val valueType = entry.getValue.toString
                 if (valueType == "string") {
                   resJSON.put(fieldName, row.getAs[String](fieldName))
-                } else if (fieldName == "int") {
+                } else if (valueType == "int") {
                   resJSON.put(fieldName, row.getAs[Int](fieldName))
                 }
               }
