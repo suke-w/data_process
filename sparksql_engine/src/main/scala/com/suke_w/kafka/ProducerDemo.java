@@ -26,7 +26,7 @@ public class ProducerDemo {
 
         //向topic中生产数据
         String message = "{\"age\":21,\"name\":\"jack\"}";
-        //message = "{\"age\":21,\"name\":\"jack\",\"favors\":[\"code\",\"game\",\"play\"]}";
+        message = "{\"age\":21,\"name\":\"jack\",\"favors\":[\"code\",\"game\",\"play\"]}";
         producer.send(new ProducerRecord<String, String>(topic,message));
 
         //关闭链接
